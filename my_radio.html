@@ -441,6 +441,9 @@ async function fetchWithFallback(url){
   throw new Error('모든 방식으로 요청 실패: ' + url + (lastErr ? (' (' + lastErr.message + ')') : ''));
 }
 
+// 방송사가 직접 접근을 막는 채널(MBC, SBS)을 위한 중계 서버
+const RELAY_PROXY = 'https://damp-bush-d9d1.jjdjckdld.workers.dev';
+
 async function resolveStreamUrl(ch){
   if(ch.type === 'static') return ch.url;
 
@@ -454,10 +457,8 @@ async function resolveStreamUrl(ch){
   }
 
   if(ch.type === 'mbc' || ch.type === 'sbs'){
-    // 이 API는 fetch()로 조회하면 CORS에 막히지만, 실제로는 진짜 스트림 주소로
-    // "리디렉션"해주는 방식이라 <audio> 태그가 직접 열면 브라우저가 알아서 따라감.
-    // 그래서 fetch를 거치지 않고 원본 주소를 그대로 재생 주소로 사용.
-    return ch.url;
+    // MBC/SBS는 직접 접근이 막혀있어서, Cloudflare Worker 중계 서버를 거쳐서 재생
+    return `${RELAY_PROXY}/?url=${encodeURIComponent(ch.url)}`;
   }
   throw new Error('unknown type');
 }
