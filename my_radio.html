@@ -350,7 +350,7 @@ let currentId = null;
 let isPlaying = false;
 let hls = null;
 let editingPresets = false;
-let presets = [null,null,null,null,null,null];
+let presets = new Array(12).fill(null);
 let lastStreamUrl = null;
 
 const player = document.getElementById('player');
@@ -398,7 +398,12 @@ function showToast(msg, ms=3200){
 async function loadState(){
   try{
     const r = await window.storage.get('presets');
-    if(r && r.value){ presets = JSON.parse(r.value); }
+    if(r && r.value){
+      const saved = JSON.parse(r.value);
+      // 기존 6칸짜리로 저장된 값이 있으면 12칸으로 확장
+      presets = new Array(12).fill(null);
+      saved.forEach((v, i)=>{ if(i < 12) presets[i] = v; });
+    }
   }catch(e){ /* 저장된 값 없음 */ }
   try{
     const r2 = await window.storage.get('lastChannel');
@@ -614,6 +619,47 @@ function renderDisplay(overrideStatus){
   playBtn.classList.toggle('playing', isPlaying);
   playBtn.textContent = isPlaying ? '❚❚' : '▶';
   eqCorner.classList.toggle('playing', isPlaying);
+  updateMediaSession(ch);
+}
+
+/* =====================================================================
+   MediaSession API — 차량 블루투스(AVRCP) / 이어폰 / 잠금화면 컨트롤 연동
+   대부분의 차량 핸즈프리·스티어링휠 다음곡/이전곡 버튼이 이 API로 전달됩니다.
+===================================================================== */
+function setupMediaSession(){
+  if(!('mediaSession' in navigator)) return;
+  try{
+    navigator.mediaSession.setActionHandler('play', ()=>{ if(!isPlaying) togglePlayPause(); });
+    navigator.mediaSession.setActionHandler('pause', ()=>{ if(isPlaying) togglePlayPause(); });
+    navigator.mediaSession.setActionHandler('nexttrack', ()=>{ presetOrChannelShift(1); });
+    navigator.mediaSession.setActionHandler('previoustrack', ()=>{ presetOrChannelShift(-1); });
+  }catch(e){ /* 일부 브라우저는 특정 액션 미지원 */ }
+}
+
+function presetOrChannelShift(dir){
+  // 저장된 프리셋이 2개 이상이면 프리셋 순서대로, 아니면 전체 채널 목록 순서대로 전환
+  const filled = presets.map((id,i)=>({id,i})).filter(p=>p.id);
+  if(filled.length >= 2){
+    const curIdx = filled.findIndex(p=>p.id === currentId);
+    let nextIdx;
+    if(curIdx === -1) nextIdx = 0;
+    else nextIdx = (curIdx + dir + filled.length) % filled.length;
+    playChannel(filled[nextIdx].id);
+  } else {
+    shiftChannel(dir);
+  }
+}
+
+function updateMediaSession(ch){
+  if(!('mediaSession' in navigator) || !ch) return;
+  try{
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: ch.name,
+      artist: ch.region,
+      album: '내 라디오',
+    });
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  }catch(e){ /* 무시 */ }
 }
 
 function renderPresets(){
@@ -805,6 +851,7 @@ if(SpeechRecognitionCtor){
 /* =====================================================================
    7. 초기화
 ===================================================================== */
+setupMediaSession();
 loadState();
 </script>
 </body>
