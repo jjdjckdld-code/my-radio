@@ -375,19 +375,22 @@ player.addEventListener('error', ()=>{
 let stallTimer = null;
 function armStallWatchdog(){
   if(stallTimer) return;
+  const ch = byId(currentId);
+  const usesRelay = ch && (ch.type === 'mbc' || ch.type === 'sbs' || (ch.type === 'static' && ch.url.startsWith('http://')));
+  const stallMs = usesRelay ? 25000 : 12000; // 중계 채널은 원래도 버퍼링이 좀 더 걸려서 여유를 더 줌
   stallTimer = setTimeout(()=>{
     stallTimer = null;
     if(player.paused) return;
-    const ch = byId(currentId);
+    const ch2 = byId(currentId);
     stopPlayback(); // 끊긴 연결을 실제로 정리 — 상태 표시와 실제 재생기 상태를 일치시킴
     isPlaying = false;
     liveDotEl.className = 'live-dot err';
     statusLabelEl.textContent = '재생 끊김';
-    showToast(`${ch ? ch.name : '채널'} 재생이 끊겼어요. 다시 눌러서 재생해주세요.`, 4500);
-    if(ch) showFallbackLink();
+    showToast(`${ch2 ? ch2.name : '채널'} 재생이 끊겼어요. 다시 눌러서 재생해주세요.`, 4500);
+    if(ch2) showFallbackLink();
     renderDisplay();
-    updateMediaSession(ch); // 제어센터에도 "일시정지"로 정확히 반영
-  }, 12000); // 12초 이상 멈춰있으면 끊긴 것으로 판단
+    updateMediaSession(ch2); // 제어센터에도 "일시정지"로 정확히 반영
+  }, stallMs);
 }
 function clearStallWatchdog(){
   if(stallTimer){ clearTimeout(stallTimer); stallTimer = null; }
@@ -556,9 +559,15 @@ async function playChannel(id){
   liveDotEl.className = 'live-dot';
   stopPlayback();
 
+  // 중계 서버(RELAY_PROXY)를 거치는 채널(MBC/SBS, http FEBC 등)은 구조상 홉이 더 많아서
+  // 특히 백그라운드에서 연결이 붙는 데 시간이 더 걸림 → 시간제한을 넉넉하게 줌
+  const usesRelay = ch.type === 'mbc' || ch.type === 'sbs' || (ch.type === 'static' && ch.url.startsWith('http://'));
+  const resolveTimeoutMs = 8000;
+  const playTimeoutMs = usesRelay ? 22000 : 9000;
+
   let url;
   try{
-    url = await withTimeout(resolveStreamUrl(ch), 8000, `${ch.name} 조회`);
+    url = await withTimeout(resolveStreamUrl(ch), resolveTimeoutMs, `${ch.name} 조회`);
     if(myRequestId !== playRequestId) return; // 그 사이 다른 채널이 눌렸으면 이 결과는 버림
     lastStreamUrl = url;
   }catch(e){
@@ -589,12 +598,12 @@ async function playChannel(id){
       // Safari 등 HLS 자체 지원 브라우저는 hls.js를 거치지 않고 네이티브로 재생
       // (hls.js는 오디오 전용 스트림에서 "재생중" 표시는 뜨지만 무음이 되는 경우가 있음)
       player.src = url;
-      await withTimeout(player.play(), 8000, `${ch.name} 재생 시작`);
+      await withTimeout(player.play(), playTimeoutMs, `${ch.name} 재생 시작`);
     } else if(url.includes('.m3u8') && window.Hls && Hls.isSupported()){
-      await withTimeout(playViaHlsJs(url, ch), 8000, `${ch.name} 재생 시작`);
+      await withTimeout(playViaHlsJs(url, ch), playTimeoutMs, `${ch.name} 재생 시작`);
     } else {
       player.src = url;
-      await withTimeout(player.play(), 8000, `${ch.name} 재생 시작`);
+      await withTimeout(player.play(), playTimeoutMs, `${ch.name} 재생 시작`);
     }
     if(myRequestId !== playRequestId) return; // 그 사이 다른 채널이 눌렸으면 반영하지 않음
     isPlaying = true;
