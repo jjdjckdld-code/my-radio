@@ -575,6 +575,8 @@ async function playChannel(id){
     statusLabelEl.textContent = '재생 중';
   }catch(e){
     if(myRequestId !== playRequestId) return;
+    stopPlayback(); // 실패한 재생 시도 정리 — 화면/제어센터가 "재생 중"처럼 보이지 않게
+    isPlaying = false;
     liveDotEl.className = 'live-dot err';
     statusLabelEl.textContent = '재생 실패';
     showToast(`${ch.name} 자동 재생이 막혔어요. 새 탭에서 열기를 시도하거나 재생 버튼을 다시 눌러주세요.`, 4200);
@@ -679,15 +681,22 @@ function updateMediaSession(ch){
   if(!('mediaSession' in navigator) || !ch) return;
   try{
     setupMediaSession(); // 재생될 때마다 다시 등록해서, iOS가 ±10초 버튼 대신 ⏮⏭(프리셋) 버튼을 쓰도록 함
-    const iconLink = document.querySelector('link[rel="apple-touch-icon"]');
-    const artwork = iconLink ? [{ src: iconLink.href, sizes: '180x180', type: 'image/png' }] : [];
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: ch.name,
-      artist: ch.region,
-      album: '내 라디오',
-      artwork,
-    });
-    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    if(isPlaying){
+      // 실제로 재생 중일 때만 제목을 갱신 — 실패했는데 제목만 바뀌어서
+      // "넘어간 것처럼 보이는데 소리는 안 나는" 혼란을 막기 위함
+      const iconLink = document.querySelector('link[rel="apple-touch-icon"]');
+      const artwork = iconLink ? [{ src: iconLink.href, sizes: '180x180', type: 'image/png' }] : [];
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: ch.name,
+        artist: ch.region,
+        album: '내 라디오',
+        artwork,
+      });
+      navigator.mediaSession.playbackState = 'playing';
+    } else {
+      // 실패/일시정지 상태에서는 제목은 마지막 성공 채널로 유지하고, 재생 상태만 반영
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }catch(e){ /* 무시 */ }
 }
 
