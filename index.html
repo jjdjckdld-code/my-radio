@@ -379,6 +379,7 @@ function armStallWatchdog(){
     stallTimer = null;
     if(player.paused) return;
     const ch = byId(currentId);
+    stopPlayback(); // 끊긴 연결을 실제로 정리 — 상태 표시와 실제 재생기 상태를 일치시킴
     isPlaying = false;
     liveDotEl.className = 'live-dot err';
     statusLabelEl.textContent = '재생 끊김';
@@ -617,7 +618,8 @@ async function playChannel(id){
 
 function togglePlayPause(){
   if(!currentId) return;
-  if(isPlaying){
+  const actuallyPlaying = !player.paused; // 내부 플래그 대신 실제 재생기 상태를 기준으로 판단
+  if(actuallyPlaying){
     player.pause();
     isPlaying = false;
     statusLabelEl.textContent = '일시정지';
@@ -678,8 +680,8 @@ function renderDisplay(overrideStatus){
 function setupMediaSession(){
   if(!('mediaSession' in navigator)) return;
   try{
-    navigator.mediaSession.setActionHandler('play', ()=>{ if(!isPlaying) togglePlayPause(); });
-    navigator.mediaSession.setActionHandler('pause', ()=>{ if(isPlaying) togglePlayPause(); });
+    navigator.mediaSession.setActionHandler('play', ()=>{ if(player.paused) togglePlayPause(); });
+    navigator.mediaSession.setActionHandler('pause', ()=>{ if(!player.paused) togglePlayPause(); });
     navigator.mediaSession.setActionHandler('nexttrack', ()=>{ presetOrChannelShift(1); });
     navigator.mediaSession.setActionHandler('previoustrack', ()=>{ presetOrChannelShift(-1); });
   }catch(e){ /* 일부 브라우저는 특정 액션 미지원 */ }
