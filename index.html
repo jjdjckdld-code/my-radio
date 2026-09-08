@@ -373,11 +373,28 @@ player.addEventListener('error', ()=>{
 
 // 재생 중 끊김(stall) 감시: 끊긴 채로 일정 시간 지나면 "재생 실패"로 명확히 전환
 let stallTimer = null;
+let stallRetryTimers = [];
+
 function armStallWatchdog(){
   if(stallTimer) return;
   const ch = byId(currentId);
   const usesRelay = ch && (ch.type === 'mbc' || ch.type === 'sbs' || (ch.type === 'static' && ch.url.startsWith('http://')));
   const stallMs = usesRelay ? 25000 : 12000; // 중계 채널은 원래도 버퍼링이 좀 더 걸려서 여유를 더 줌
+
+  if(usesRelay){
+    // 중계 채널은 끊기자마자 몇 차례 조용히 자동 재연결을 시도 (토스트 없이, 사용자 눈치 못 채게)
+    [4000, 9000, 15000, 20000].forEach(delay=>{
+      const t = setTimeout(()=>{
+        if(player.paused || !lastStreamUrl) return; // 이미 정지했거나 다른 채널로 넘어갔으면 무시
+        try{
+          player.src = lastStreamUrl;
+          player.play().catch(()=>{});
+        }catch(e){ /* 무시하고 다음 재시도 대기 */ }
+      }, delay);
+      stallRetryTimers.push(t);
+    });
+  }
+
   stallTimer = setTimeout(()=>{
     stallTimer = null;
     if(player.paused) return;
@@ -394,6 +411,8 @@ function armStallWatchdog(){
 }
 function clearStallWatchdog(){
   if(stallTimer){ clearTimeout(stallTimer); stallTimer = null; }
+  stallRetryTimers.forEach(t=>clearTimeout(t));
+  stallRetryTimers = [];
 }
 
 function showFallbackLink(){
