@@ -356,15 +356,41 @@ let playRequestId = 0; // 연타/백그라운드 지연 시 오래된 응답이 
 
 const player = document.getElementById('player');
 player.setAttribute('referrerpolicy', 'no-referrer');
-player.addEventListener('playing', ()=>{ isPlaying = true; hideFallbackLink(); renderDisplay(); renderChannelList(document.getElementById('searchBox').value); });
-player.addEventListener('pause', ()=>{ isPlaying = false; renderDisplay(); renderChannelList(document.getElementById('searchBox').value); });
+player.addEventListener('playing', ()=>{ isPlaying = true; clearStallWatchdog(); hideFallbackLink(); renderDisplay(); renderChannelList(document.getElementById('searchBox').value); });
+player.addEventListener('pause', ()=>{ isPlaying = false; clearStallWatchdog(); renderDisplay(); renderChannelList(document.getElementById('searchBox').value); });
+player.addEventListener('waiting', armStallWatchdog);   // 버퍼링 시작 → 감시 타이머 시작
+player.addEventListener('stalled', armStallWatchdog);
 player.addEventListener('error', ()=>{
   const ch = byId(currentId);
+  clearStallWatchdog();
+  isPlaying = false;
   liveDotEl.className = 'live-dot err';
   statusLabelEl.textContent = '재생 실패';
   showToast(`${ch ? ch.name : '채널'} 재생 중 오류가 발생했어요. 아래 링크로 직접 확인해보세요.`, 4500);
   showFallbackLink();
+  updateMediaSession(ch); // playbackState를 즉시 '일시정지'로 반영
 });
+
+// 재생 중 끊김(stall) 감시: 끊긴 채로 일정 시간 지나면 "재생 실패"로 명확히 전환
+let stallTimer = null;
+function armStallWatchdog(){
+  if(stallTimer) return;
+  stallTimer = setTimeout(()=>{
+    stallTimer = null;
+    if(player.paused) return;
+    const ch = byId(currentId);
+    isPlaying = false;
+    liveDotEl.className = 'live-dot err';
+    statusLabelEl.textContent = '재생 끊김';
+    showToast(`${ch ? ch.name : '채널'} 재생이 끊겼어요. 다시 눌러서 재생해주세요.`, 4500);
+    if(ch) showFallbackLink();
+    renderDisplay();
+    updateMediaSession(ch); // 제어센터에도 "일시정지"로 정확히 반영
+  }, 12000); // 12초 이상 멈춰있으면 끊긴 것으로 판단
+}
+function clearStallWatchdog(){
+  if(stallTimer){ clearTimeout(stallTimer); stallTimer = null; }
+}
 
 function showFallbackLink(){
   const wrap = document.getElementById('fallbackLinkWrap');
